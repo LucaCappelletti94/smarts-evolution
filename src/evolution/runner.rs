@@ -1527,16 +1527,23 @@ impl EvolutionSession {
         }
 
         let pair_count = population_size.div_ceil(2);
+        // Parents are reused cyclically, so compute each parent's mutation
+        // direction once instead of repeating the per-parent confusion pass for
+        // every cycle.
+        let directions: Vec<MutationDirection> = parents
+            .iter()
+            .map(|parent| self.mutation_direction_for_parent(parent))
+            .collect();
         let mut jobs = Vec::with_capacity(pair_count);
 
         for pair_index in 0..pair_count {
-            let parent_a = &parents[(pair_index * 2) % parents.len()];
-            let parent_b = &parents[(pair_index * 2 + 1) % parents.len()];
+            let index_a = (pair_index * 2) % parents.len();
+            let index_b = (pair_index * 2 + 1) % parents.len();
             jobs.push(OffspringPairJob {
-                parent_a: parent_a.genome.clone(),
-                parent_b: parent_b.genome.clone(),
-                direction_a: self.mutation_direction_for_parent(parent_a),
-                direction_b: self.mutation_direction_for_parent(parent_b),
+                parent_a: parents[index_a].genome.clone(),
+                parent_b: parents[index_b].genome.clone(),
+                direction_a: directions[index_a],
+                direction_b: directions[index_b],
                 seed: self.rng.random::<u64>(),
                 include_second: pair_index * 2 + 1 < population_size,
             });
