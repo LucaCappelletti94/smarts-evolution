@@ -652,34 +652,24 @@ fn sample_mutation_operator<R: Rng>(
     direction: MutationDirection,
 ) -> MutationOperator {
     let near_smarts_len_limit = is_near_smarts_len_limit(query);
-    let total_weight = MutationOperator::ALL
-        .into_iter()
-        .map(|operator| {
-            operator_weight(
-                operator,
-                query,
-                reset_pool,
-                recursive_depth,
-                near_smarts_len_limit,
-                direction,
-            )
-        })
-        .sum();
-
-    if total_weight == 0 {
-        return MutationOperator::AtomConstraints;
-    }
-
-    let mut roll = rng.random_range(0..total_weight);
-    for operator in MutationOperator::ALL {
-        let weight = operator_weight(
+    let weights = MutationOperator::ALL.map(|operator| {
+        operator_weight(
             operator,
             query,
             reset_pool,
             recursive_depth,
             near_smarts_len_limit,
             direction,
-        );
+        )
+    });
+    let total_weight: u32 = weights.iter().sum();
+
+    if total_weight == 0 {
+        return MutationOperator::AtomConstraints;
+    }
+
+    let mut roll = rng.random_range(0..total_weight);
+    for (operator, &weight) in MutationOperator::ALL.into_iter().zip(weights.iter()) {
         if roll < weight {
             return operator;
         }
