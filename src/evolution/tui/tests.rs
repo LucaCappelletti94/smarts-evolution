@@ -3,7 +3,6 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
-use core::str::FromStr;
 use core::time::Duration;
 use std::io;
 use std::sync::mpsc;

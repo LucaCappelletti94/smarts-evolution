@@ -399,7 +399,6 @@ fn generation_detail_message(
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
     use std::vec;
 
     use smarts_rs::PreparedTarget;

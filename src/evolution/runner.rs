@@ -2556,7 +2556,6 @@ fn phenotype_distance(left: &[u64], right: &[u64]) -> u32 {
 
 #[cfg(test)]
 mod regression_tests {
-    use std::str::FromStr;
     use std::sync::{Arc as StdArc, Mutex};
     use std::vec;
 

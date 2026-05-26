@@ -1,7 +1,6 @@
 #![allow(clippy::unwrap_used)]
 
 use std::hint::black_box;
-use std::str::FromStr;
 use std::time::Duration;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
