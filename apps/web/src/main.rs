@@ -5,7 +5,6 @@ mod plot;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::str::FromStr;
 
 use dioxus::prelude::*;
 use icons::{AppIcon, app_icon};
