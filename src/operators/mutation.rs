@@ -1,6 +1,5 @@
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
-use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::str::FromStr;
@@ -691,7 +690,7 @@ fn sample_mutation_operator<R: Rng>(
 }
 
 fn is_near_smarts_len_limit(query: &QueryMol) -> bool {
-    query.to_string().len() * 100 >= MAX_SMARTS_LEN * NEAR_SMARTS_LEN_LIMIT_PERCENT
+    query.smarts_len() * 100 >= MAX_SMARTS_LEN * NEAR_SMARTS_LEN_LIMIT_PERCENT
 }
 
 fn operator_weight(
