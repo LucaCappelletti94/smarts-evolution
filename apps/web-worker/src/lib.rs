@@ -2,7 +2,6 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 use std::cell::RefCell;
-use std::str::FromStr;
 use std::time::Duration;
 
 #[cfg(target_arch = "wasm32")]

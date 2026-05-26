@@ -11,8 +11,6 @@ Native terminal runs can use `task.evolve_with_tui(&config, &seed_corpus)` with 
 ## Quick Start
 
 ```rust
-use core::str::FromStr;
-
 use smiles_parser::Smiles;
 use smarts_evolution::{
     EvolutionConfig, EvolutionTask, FoldData, FoldSample, SeedCorpus,

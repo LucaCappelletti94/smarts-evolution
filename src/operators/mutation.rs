@@ -1914,7 +1914,7 @@ fn random_bond_primitive<R: Rng>(
     match rng.random_range(0..100) {
         0..=34 => BondPrimitive::Bond(Bond::Single),
         35..=54 => BondPrimitive::Bond(Bond::Double),
-        55..=66 => BondPrimitive::Bond(Bond::Aromatic),
+        55..=66 => BondPrimitive::Aromatic,
         67..=78 => BondPrimitive::Any,
         79..=88 => BondPrimitive::Ring,
         89..=93 => BondPrimitive::Bond(Bond::Triple),
@@ -1928,7 +1928,7 @@ fn random_pubchem_bond_primitive<R: Rng>(rng: &mut R) -> BondPrimitive {
     match rng.random_range(0..100) {
         0..=34 => BondPrimitive::Bond(Bond::Single),
         35..=54 => BondPrimitive::Bond(Bond::Double),
-        55..=66 => BondPrimitive::Bond(Bond::Aromatic),
+        55..=66 => BondPrimitive::Aromatic,
         67..=78 => BondPrimitive::Any,
         79..=88 => BondPrimitive::Ring,
         89..=93 => BondPrimitive::Bond(Bond::Triple),

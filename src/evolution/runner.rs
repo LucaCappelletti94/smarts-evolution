@@ -2100,7 +2100,8 @@ fn target_dataset_seed_features(target: &PreparedTarget) -> Vec<DatasetSeedFeatu
             });
         }
 
-        for (left, right, _, _) in target.target().edges_for_node(atom_id) {
+        for edge in target.target().edges_for_node(atom_id) {
+            let (left, right) = (edge.source(), edge.target());
             let other_atom_id = if left == atom_id { right } else { left };
             if other_atom_id < atom_id {
                 continue;
@@ -2216,7 +2217,8 @@ fn dataset_seed_bond_feature_coverage_numerator(
     let mut covered_bonds = 0usize;
 
     for atom_id in 0..target.atom_count() {
-        for (left, right, _, _) in target.target().edges_for_node(atom_id) {
+        for edge in target.target().edges_for_node(atom_id) {
+            let (left, right) = (edge.source(), edge.target());
             let other_atom_id = if left == atom_id { right } else { left };
             if other_atom_id < atom_id {
                 continue;
@@ -2554,7 +2556,6 @@ fn phenotype_distance(left: &[u64], right: &[u64]) -> u32 {
 
 #[cfg(test)]
 mod regression_tests {
-    use std::str::FromStr;
     use std::sync::{Arc as StdArc, Mutex};
     use std::vec;
 
