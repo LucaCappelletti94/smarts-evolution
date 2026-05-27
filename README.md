@@ -49,6 +49,23 @@ assert!(!result.best_smarts().is_empty());
 assert!(result.best_mcc().is_finite());
 ```
 
+## TUI Clipboard
+
+The native TUI (`tui` feature) has `[copy]` buttons for the best SMARTS and for change-point SMARTS. Copying tries the OS clipboard first on a local desktop session, and falls back to a terminal OSC 52 escape sequence when no native clipboard is reachable. For SSH and tmux sessions it skips the native clipboard (which would land on the wrong machine) and forwards to the controlling terminal via OSC 52 directly, so the SMARTS reaches the clipboard on the machine you are actually viewing.
+
+Two things must hold for the OSC 52 path to land in your local clipboard:
+
+- The outer terminal (the one you read on the local end of the SSH/tmux session) must support OSC 52 clipboard writes. Most modern terminals do (kitty, Alacritty, WezTerm, foot, iTerm2, recent xterm); some, such as GNOME Terminal and other VTE-based terminals, do not.
+- Inside tmux, OSC 52 is wrapped in tmux's passthrough sequence so tmux forwards it to the outer terminal. This requires `allow-passthrough` to be enabled (tmux 3.3+ defaults it off). Add this to your `tmux.conf`:
+
+  ```tmux
+  set -g allow-passthrough on
+  ```
+
+  Alternatively, configure tmux's own clipboard forwarding instead of passthrough (`set -g set-clipboard on` plus `set -as terminal-features ',*:clipboard'`), which also lets tmux pass the bare OSC 52 to a capable outer terminal.
+
+When a copy happens inside tmux, the TUI queries `tmux show-options` for the effective `allow-passthrough` value of the current pane. If it is off, the status line reports that the copy will not reach the clipboard and shows the exact `tmux set -g allow-passthrough on` command to fix it, instead of falsely claiming success. Note that `set -g allow-passthrough on` is a tmux command: run it as `tmux set -g allow-passthrough on` from a shell, add the bare `set -g allow-passthrough on` line to `~/.tmux.conf`, or type it after `Ctrl-b :` inside tmux. It is not a shell builtin.
+
 ## Terminal Progress Bars
 
 Enable the `indicatif` feature and call `task.evolve_with_indicatif(&config, &seed_corpus)` to get generation, per-generation SMARTS evaluation, and offspring candidate-generation progress bars. The evaluation bar reports completion, current SMARTS and MCC, generation-best SMARTS and MCC, and incumbent-best SMARTS and MCC; the offspring bar reports mutation and candidate selection progress while the next generation is prepared. For large prepared datasets, use `task.evolve_owned_with_indicatif_progress(...)` to move the task folds into the session; use `IndicatifEvolutionProgress::attach_to(&multi)` or `from_bars_with_offspring(...)` to embed all bars in an existing `MultiProgress`. Non-terminal callers can implement `EvolutionProgressObserver` and pass it to `task.evolve_with_observer(...)`.

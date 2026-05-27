@@ -1346,9 +1346,69 @@ fn best_overlay_copy_button_requests_clipboard_copy() {
 #[test]
 fn osc52_clipboard_sequence_encodes_payload() {
     assert_eq!(osc52_clipboard_sequence("C=O"), "\x1b]52;c;Qz1P\x07");
+    assert_eq!(
+        terminal_clipboard_sequence("C=O", false),
+        "\x1b]52;c;Qz1P\x07"
+    );
+}
+
+#[test]
+fn tmux_passthrough_wraps_sequence_and_doubles_escapes() {
+    // tmux passthrough wraps the payload in a DCS and doubles every inner ESC
+    // so tmux forwards the OSC 52 to the outer terminal instead of dropping it.
+    assert_eq!(
+        tmux_passthrough_sequence("\x1b]52;c;Qz1P\x07"),
+        "\x1bPtmux;\x1b\x1b]52;c;Qz1P\x07\x1b\\"
+    );
+    assert_eq!(
+        terminal_clipboard_sequence("C=O", true),
+        "\x1bPtmux;\x1b\x1b]52;c;Qz1P\x07\x1b\\"
+    );
+}
+
+#[test]
+fn parse_tmux_passthrough_value_recognizes_enabled_states() {
+    assert!(parse_tmux_passthrough_value("on"));
+    assert!(parse_tmux_passthrough_value("all"));
+    assert!(parse_tmux_passthrough_value(" ON\n"));
+    assert!(!parse_tmux_passthrough_value("off"));
+    assert!(!parse_tmux_passthrough_value(""));
+    assert!(!parse_tmux_passthrough_value("maybe"));
+}
+
+#[test]
+fn passthrough_warning_only_replaces_success_when_disabled() {
+    // Warn only when the copy succeeded and tmux passthrough is known off.
+    assert_eq!(
+        passthrough_warning_for("copied SMARTS to clipboard", Some(false)).as_deref(),
+        Some("copied, but tmux allow-passthrough is off: run 'tmux set -g allow-passthrough on'")
+    );
+    assert_eq!(
+        passthrough_warning_for("copied SMARTS to clipboard", Some(true)),
+        None
+    );
+    assert_eq!(
+        passthrough_warning_for("copied SMARTS to clipboard", None),
+        None
+    );
+    // A failed copy keeps its own error message.
+    assert_eq!(
+        passthrough_warning_for("clipboard copy failed: denied", Some(false)),
+        None
+    );
+}
+
+#[test]
+fn write_terminal_clipboard_matches_session_sequence() {
+    // The writer picks bare vs tmux-wrapped from the environment, so compare
+    // against the same env-derived expectation to stay robust inside tmux.
+    let in_tmux = std::env::var_os("TMUX").is_some();
     let mut output = Vec::new();
-    write_clipboard_sequence(&mut output, "C=O").unwrap();
-    assert_eq!(String::from_utf8(output).unwrap(), "\x1b]52;c;Qz1P\x07");
+    write_terminal_clipboard(&mut output, "C=O").unwrap();
+    assert_eq!(
+        String::from_utf8(output).unwrap(),
+        terminal_clipboard_sequence("C=O", in_tmux)
+    );
 }
 
 #[test]

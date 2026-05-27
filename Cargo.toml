@@ -7,7 +7,7 @@ edition = "2024"
 default = ["std"]
 indicatif = ["std", "dep:indicatif"]
 std = ["dep:rayon", "log/std", "smarts-rs/std"]
-tui = ["std", "dep:base64", "dep:ratatui"]
+tui = ["std", "dep:base64", "dep:ratatui", "dep:arboard"]
 
 [profile.release]
 opt-level = 3
@@ -26,6 +26,12 @@ indicatif = { version = "0.18.4", default-features = false, optional = true }
 base64 = { version = "0.22.1", optional = true }
 ratatui = { version = "0.30.0", optional = true }
 rayon = { version = "1.12.0", optional = true }
+# Text-only native clipboard for the TUI copy buttons. Default features are
+# disabled so we avoid the image dependency tree; on Linux this uses the
+# pure-Rust x11rb backend (no system libraries to link), keeping CI clean. When
+# no native clipboard is reachable (headless or remote SSH sessions) the TUI
+# falls back to a terminal OSC 52 sequence, with tmux passthrough wrapping.
+arboard = { version = "3.6.1", default-features = false, optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 criterion = "0.8.2"
