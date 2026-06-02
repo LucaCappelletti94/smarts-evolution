@@ -15,9 +15,10 @@
 //! generation the climb takes around 15 seconds.
 //!
 //! For a screenshot: let it run until the MCC curve has risen, then press `p`
-//! (or click `[p pause]`) to freeze it and capture the frame. Generation and
-//! stagnation limits are set very high so the run does not stop on its own;
-//! press `q` (or `[q stop]`) to quit.
+//! (or click `[p pause]`) to freeze it and capture the frame. By default the run
+//! does not stop on its own, so press `q` (or `[q stop]`) to quit. Set the
+//! `TUI_DEMO_GENERATIONS` environment variable to make it auto-exit after that
+//! many generations, which is convenient when recording a fixed-length clip.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 #[cfg(feature = "tui")]
@@ -119,10 +120,18 @@ fn main() {
 
     let task = EvolutionTask::new("class:amide-vs-rest", vec![FoldData::new(samples)]);
 
+    // By default the run does not stop on its own (press `q` to quit). Set
+    // TUI_DEMO_GENERATIONS to a small number to make it auto-exit after that
+    // many generations, which is handy when recording a fixed-length clip.
+    let generation_limit = std::env::var("TUI_DEMO_GENERATIONS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(1_000_000);
+
     let config = EvolutionConfig::builder()
         .population_size(24)
-        .generation_limit(1_000_000)
-        .stagnation_limit(1_000_000)
+        .generation_limit(generation_limit)
+        .stagnation_limit(generation_limit)
         .rng_seed(42)
         .build()
         .unwrap();
