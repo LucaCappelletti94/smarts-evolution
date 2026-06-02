@@ -763,7 +763,7 @@ fn header_lines_spread_content_across_width() {
     assert!(full_line.contains("gen   3/800"));
     assert!(full_line.contains("elapsed"));
 
-    let compact_lines = two_line_header(Rect::new(0, 0, 80, 4), &state, DashboardLayout::Compact);
+    let compact_lines = two_line_header(Rect::new(0, 0, 80, 4), &state);
     assert_eq!(compact_lines.len(), 2);
     for line in compact_lines {
         assert_eq!(line.width(), block_inner_width(80));
@@ -1415,38 +1415,7 @@ fn write_terminal_clipboard_matches_session_sequence() {
 fn header_fit_uses_width_dependent_line_count() {
     let state = sample_state(TuiMetric::Mcc);
     assert_eq!(HeaderFit::for_width(150, &state), HeaderFit::OneLine);
-    assert_eq!(HeaderFit::for_width(80, &state), HeaderFit::TwoLine);
-}
-
-#[test]
-fn header_phase_labels_are_space_padded() {
-    let mut state = sample_state(TuiMetric::Mcc);
-    state.phase = DashboardPhase::Evaluating;
-    let evaluating_suffix = one_line_header_suffix(&state);
-
-    state.phase = DashboardPhase::Mutating;
-    let mutating_suffix = one_line_header_suffix(&state);
-
-    assert!(evaluating_suffix.contains(&padded_phase_label(
-        DashboardPhase::Evaluating.label(),
-        FULL_PHASE_LABEL_WIDTH
-    )));
-    assert!(mutating_suffix.contains(&padded_phase_label(
-        DashboardPhase::Mutating.label(),
-        FULL_PHASE_LABEL_WIDTH
-    )));
-    assert_eq!(
-        evaluating_suffix.chars().count(),
-        mutating_suffix.chars().count()
-    );
-    assert_eq!(
-        header_phase_label(DashboardPhase::Evaluating, DashboardLayout::Compact)
-            .chars()
-            .count(),
-        header_phase_label(DashboardPhase::Mutating, DashboardLayout::Compact)
-            .chars()
-            .count()
-    );
+    assert_eq!(HeaderFit::for_width(66, &state), HeaderFit::TwoLine);
 }
 
 #[test]
@@ -1454,20 +1423,14 @@ fn header_numbers_are_space_padded() {
     let mut state = sample_state(TuiMetric::Mcc);
     state.generation = 3;
     state.generation_limit = 800;
-    state.phase_completed = 7;
-    state.phase_total = 2048;
     let short_suffix = one_line_header_suffix(&state);
 
     state.generation = 33;
-    state.phase_completed = 77;
     let longer_suffix = one_line_header_suffix(&state);
 
     assert!(short_suffix.contains("gen   3/800"));
-    assert!(short_suffix.contains(&format!(
-        "{}    7/2048",
-        padded_phase_label(DashboardPhase::Evaluating.label(), FULL_PHASE_LABEL_WIDTH)
-    )));
-    assert!(short_suffix.contains("best MCC  0.500"));
+    assert!(short_suffix.contains("no-imp"));
+    assert!(short_suffix.contains("elapsed"));
     assert_eq!(short_suffix.chars().count(), longer_suffix.chars().count());
 }
 

@@ -18,8 +18,6 @@ use super::state::*;
 const MIN_WIDTH: u16 = 60;
 const MIN_HEIGHT: u16 = 18;
 const MIN_ONE_LINE_HEADER_TASK_WIDTH: usize = 16;
-pub(super) const FULL_PHASE_LABEL_WIDTH: usize = 19;
-const SHORT_PHASE_LABEL_WIDTH: usize = 5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum HeaderFit {
@@ -49,7 +47,6 @@ impl HeaderFit {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct HeaderWidths {
     generation: usize,
-    phase: usize,
     stagnation: usize,
 }
 
@@ -62,7 +59,6 @@ impl HeaderWidths {
             .unwrap_or(0);
         Self {
             generation: decimal_width(state.generation_limit.max(state.generation)),
-            phase: decimal_width(state.phase_total.max(state.phase_completed).max(1)),
             stagnation: decimal_width(state.generation_limit.max(stagnation)),
         }
     }
@@ -171,7 +167,7 @@ pub(super) fn render_dashboard(frame: &mut Frame<'_>, state: &mut DashboardState
     state.click_regions.layout = Some(layout);
     state.click_regions.metric_area = Some(chunks[1]);
     state.click_regions.plot_area = Some(chunks[2]);
-    render_header(frame, chunks[0], state, layout, header_fit);
+    render_header(frame, chunks[0], state, header_fit);
     if layout == DashboardLayout::Minimal {
         render_metric_line(frame, chunks[1], state);
     } else {
@@ -211,13 +207,12 @@ pub(super) fn render_header(
     frame: &mut Frame<'_>,
     area: Rect,
     state: &DashboardState,
-    layout: DashboardLayout,
     fit: HeaderFit,
 ) {
     let title = format!(" smarts-evolution {} ", state.status.label());
     let lines = match fit {
         HeaderFit::OneLine => vec![Line::from(one_line_header(area, state))],
-        HeaderFit::TwoLine => two_line_header(area, state, layout),
+        HeaderFit::TwoLine => two_line_header(area, state),
     };
     let paragraph =
         Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(title));
@@ -237,16 +232,8 @@ pub(super) fn one_line_header_suffix(state: &DashboardState) -> String {
         .map(|point| point.stagnation)
         .unwrap_or(0);
     format!(
-        " gen {} {} {} best MCC {} cov {} no-imp {} ETA {} elapsed {}",
+        " gen {} no-imp {} ETA {} elapsed {}",
         padded_pair(state.generation, state.generation_limit, widths.generation),
-        padded_phase_label(state.phase.label(), FULL_PHASE_LABEL_WIDTH),
-        padded_pair(
-            state.phase_completed,
-            state.phase_total.max(1),
-            widths.phase
-        ),
-        fmt_padded_opt(state.best_mcc(), 6),
-        fmt_padded_opt(state.best_coverage(), 5),
         padded_value(stagnation, widths.stagnation),
         padded_eta_text(state),
         fmt_padded_duration(state.elapsed())
@@ -265,61 +252,31 @@ pub(super) fn one_line_header_fields(state: &DashboardState) -> Vec<String> {
             "gen {}",
             padded_pair(state.generation, state.generation_limit, widths.generation)
         ),
-        padded_phase_label(state.phase.label(), FULL_PHASE_LABEL_WIDTH),
-        padded_pair(
-            state.phase_completed,
-            state.phase_total.max(1),
-            widths.phase,
-        ),
-        format!("best MCC {}", fmt_padded_opt(state.best_mcc(), 6)),
-        format!("cov {}", fmt_padded_opt(state.best_coverage(), 5)),
         format!("no-imp {}", padded_value(stagnation, widths.stagnation)),
         format!("ETA {}", padded_eta_text(state)),
         format!("elapsed {}", fmt_padded_duration(state.elapsed())),
     ]
 }
 
-pub(super) fn two_line_header(
-    area: Rect,
-    state: &DashboardState,
-    layout: DashboardLayout,
-) -> Vec<Line<'static>> {
+pub(super) fn two_line_header(area: Rect, state: &DashboardState) -> Vec<Line<'static>> {
     let widths = HeaderWidths::for_state(state);
-    let phase = header_phase_label(state.phase, layout);
+    let stagnation = state
+        .history
+        .last()
+        .map(|point| point.stagnation)
+        .unwrap_or(0);
     let width = block_inner_width(area.width);
     let first_fields = vec![
         format!(
             "gen {}",
             padded_pair(state.generation, state.generation_limit, widths.generation)
         ),
-        phase,
-        padded_pair(
-            state.phase_completed,
-            state.phase_total.max(1),
-            widths.phase,
-        ),
-        format!("ETA {}", padded_eta_text(state)),
+        format!("no-imp {}", padded_value(stagnation, widths.stagnation)),
     ];
-    let stagnation = state
-        .history
-        .last()
-        .map(|point| point.stagnation)
-        .unwrap_or(0);
-    let second_fields = if layout == DashboardLayout::Full {
-        vec![
-            format!("best MCC {}", fmt_padded_opt(state.best_mcc(), 6)),
-            format!("coverage {}", fmt_padded_opt(state.best_coverage(), 5)),
-            format!("no-improve {}", padded_value(stagnation, widths.stagnation)),
-            format!("elapsed {}", fmt_padded_duration(state.elapsed())),
-        ]
-    } else {
-        vec![
-            format!("best MCC {}", fmt_padded_opt(state.best_mcc(), 6)),
-            format!("cov {}", fmt_padded_opt(state.best_coverage(), 5)),
-            format!("no-imp {}", padded_value(stagnation, widths.stagnation)),
-            format!("elapsed {}", fmt_padded_duration(state.elapsed())),
-        ]
-    };
+    let second_fields = vec![
+        format!("ETA {}", padded_eta_text(state)),
+        format!("elapsed {}", fmt_padded_duration(state.elapsed())),
+    ];
     vec![
         Line::from(distributed_header_line(&state.task_id, first_fields, width)),
         Line::from(distributed_text_line(&second_fields, width)),
@@ -1336,19 +1293,6 @@ pub(super) fn padded_pair(
 
 pub(super) fn padded_value(value: impl fmt::Display, width: usize) -> String {
     format!("{value:>width$}")
-}
-
-pub(super) fn padded_phase_label(label: &str, width: usize) -> String {
-    format!("{label:<width$}")
-}
-
-pub(super) fn header_phase_label(phase: DashboardPhase, layout: DashboardLayout) -> String {
-    match layout {
-        DashboardLayout::Full => padded_phase_label(phase.label(), FULL_PHASE_LABEL_WIDTH),
-        DashboardLayout::Compact | DashboardLayout::Minimal => {
-            padded_phase_label(phase.short_label(), SHORT_PHASE_LABEL_WIDTH)
-        }
-    }
 }
 
 pub(super) fn ratio(completed: usize, total: usize) -> f64 {
