@@ -462,6 +462,21 @@ fn operator_benches(c: &mut Criterion) {
         );
     });
 
+    // Deterministic aggregate: a fixed seed makes every iteration perform the
+    // identical sequence of mutations, so per-call workload variance cancels and
+    // small changes in the mutation sampling path become measurable.
+    group.bench_function("mutate_batch_deterministic", |b| {
+        b.iter(|| {
+            let mut rng = SmallRng::seed_from_u64(0xA17E_5EED);
+            let mut acc = 0usize;
+            for _ in 0..256 {
+                let child = mutator.mutate(genome.clone(), &mut rng);
+                acc = acc.wrapping_add(child.smarts_len());
+            }
+            black_box(acc);
+        });
+    });
+
     group.finish();
 }
 

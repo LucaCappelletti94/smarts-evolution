@@ -3,6 +3,7 @@ use alloc::string::String;
 use core::time::Duration;
 use std::io::{self, Write};
 use std::sync::mpsc::Sender;
+use std::sync::{Mutex, OnceLock};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
@@ -222,8 +223,26 @@ pub(super) fn toggle_y_axis_mode(state: &mut DashboardState) {
     }
 }
 
+const CLIPBOARD_COPIED_MESSAGE: &str = "copied SMARTS to clipboard";
+const TMUX_PASSTHROUGH_WARNING: &str =
+    "copied, but tmux allow-passthrough is off: run 'tmux set -g allow-passthrough on'";
+
 pub(super) fn copy_pending_clipboard_request(state: &mut DashboardState) {
+    if state.pending_clipboard.is_none() {
+        return;
+    }
+    // Probe tmux only when a copy is actually pending (right after a click), so
+    // the idle redraw loop never spawns a subprocess. The OSC 52 write always
+    // reports success, so without this check tmux would silently drop the copy.
+    let passthrough = tmux_passthrough_enabled();
     copy_pending_clipboard_request_with(state, copy_text_to_clipboard);
+    if let Some(message) = state
+        .last_event
+        .as_deref()
+        .and_then(|event| passthrough_warning_for(event, passthrough))
+    {
+        state.last_event = Some(message);
+    }
 }
 
 pub(super) fn copy_pending_clipboard_request_with(
@@ -234,20 +253,125 @@ pub(super) fn copy_pending_clipboard_request_with(
         return;
     };
     match copy_text(&text) {
-        Ok(()) => state.last_event = Some("copied SMARTS to clipboard".into()),
+        Ok(()) => state.last_event = Some(CLIPBOARD_COPIED_MESSAGE.into()),
         Err(error) => state.last_event = Some(format!("clipboard copy failed: {error}")),
     }
 }
 
-pub(super) fn copy_text_to_clipboard(text: &str) -> io::Result<()> {
-    let mut stdout = io::stdout();
-    write_clipboard_sequence(&mut stdout, text)
+/// Replacement status message when a copy reported success but tmux will drop
+/// the forwarded OSC 52 because passthrough is disabled. `None` keeps the
+/// original message (passthrough unknown, enabled, or the copy already failed).
+pub(super) fn passthrough_warning_for(message: &str, passthrough: Option<bool>) -> Option<String> {
+    (passthrough == Some(false) && message == CLIPBOARD_COPIED_MESSAGE)
+        .then(|| String::from(TMUX_PASSTHROUGH_WARNING))
 }
 
-pub(super) fn write_clipboard_sequence(writer: &mut impl Write, text: &str) -> io::Result<()> {
-    let sequence = osc52_clipboard_sequence(text);
+/// Whether tmux will forward passthrough escape sequences to the outer terminal,
+/// which OSC 52 clipboard copy relies on inside tmux.
+///
+/// Returns `None` when not in tmux or the option cannot be read (no `tmux`
+/// binary, server gone), so callers do not warn on an unknown state.
+fn tmux_passthrough_enabled() -> Option<bool> {
+    if !running_in_tmux() {
+        return None;
+    }
+    let mut command = std::process::Command::new("tmux");
+    command.arg("show-options").arg("-A").arg("-v");
+    // Query the running pane so any session/window/pane override is honored,
+    // falling back to the global value when the pane id is not exported.
+    match std::env::var_os("TMUX_PANE") {
+        Some(pane) => {
+            command.arg("-p").arg("-t").arg(pane);
+        }
+        None => {
+            command.arg("-g");
+        }
+    }
+    command.arg("allow-passthrough");
+    let output = command.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = core::str::from_utf8(&output.stdout).ok()?;
+    Some(parse_tmux_passthrough_value(value))
+}
+
+/// Parses a tmux `allow-passthrough` option value. Both `on` and `all` forward
+/// passthrough sequences; anything else (including `off`) does not.
+pub(super) fn parse_tmux_passthrough_value(value: &str) -> bool {
+    let value = value.trim();
+    value.eq_ignore_ascii_case("on") || value.eq_ignore_ascii_case("all")
+}
+
+pub(super) fn copy_text_to_clipboard(text: &str) -> io::Result<()> {
+    // SSH and tmux sessions are usually viewed on a different machine than the
+    // one running the dashboard, so a native clipboard would land on the wrong
+    // host. Forward to the controlling terminal via OSC 52 in that case. Local
+    // sessions prefer the native clipboard and fall back to OSC 52 only when no
+    // clipboard is reachable (for example on a headless box).
+    if !prefer_terminal_clipboard() && copy_to_native_clipboard(text) {
+        return Ok(());
+    }
+    write_terminal_clipboard(&mut io::stdout(), text)
+}
+
+/// True when the clipboard we should target lives on the far end of the
+/// terminal connection rather than on this machine.
+fn prefer_terminal_clipboard() -> bool {
+    running_in_tmux()
+        || std::env::var_os("SSH_CONNECTION").is_some()
+        || std::env::var_os("SSH_TTY").is_some()
+}
+
+fn running_in_tmux() -> bool {
+    std::env::var_os("TMUX").is_some()
+}
+
+/// Copies into the OS clipboard, returning whether the copy succeeded.
+///
+/// The clipboard handle is kept alive for the process so that the contents
+/// survive on X11, where the selection owner must stay running to serve paste
+/// requests. A handle is only created the first time a local copy is attempted.
+fn copy_to_native_clipboard(text: &str) -> bool {
+    let Some(clipboard) = native_clipboard() else {
+        return false;
+    };
+    let Ok(mut clipboard) = clipboard.lock() else {
+        return false;
+    };
+    clipboard.set_text(text).is_ok()
+}
+
+fn native_clipboard() -> Option<&'static Mutex<arboard::Clipboard>> {
+    static CLIPBOARD: OnceLock<Option<Mutex<arboard::Clipboard>>> = OnceLock::new();
+    CLIPBOARD
+        .get_or_init(|| arboard::Clipboard::new().ok().map(Mutex::new))
+        .as_ref()
+}
+
+pub(super) fn write_terminal_clipboard(writer: &mut impl Write, text: &str) -> io::Result<()> {
+    let sequence = terminal_clipboard_sequence(text, running_in_tmux());
     writer.write_all(sequence.as_bytes())?;
     writer.flush()
+}
+
+/// Builds the terminal clipboard escape sequence, wrapping it for tmux when the
+/// session runs inside a tmux server.
+pub(super) fn terminal_clipboard_sequence(text: &str, in_tmux: bool) -> String {
+    let sequence = osc52_clipboard_sequence(text);
+    if in_tmux {
+        tmux_passthrough_sequence(&sequence)
+    } else {
+        sequence
+    }
+}
+
+/// Wraps an escape sequence in tmux's passthrough DCS so tmux forwards it to the
+/// outer terminal instead of swallowing it. Every inner ESC must be doubled.
+///
+/// This requires `set -g allow-passthrough on` in tmux 3.3+.
+pub(super) fn tmux_passthrough_sequence(sequence: &str) -> String {
+    format!("\x1bPtmux;{}\x1b\\", sequence.replace('\x1b', "\x1b\x1b"))
 }
 
 pub(super) fn osc52_clipboard_sequence(text: &str) -> String {
