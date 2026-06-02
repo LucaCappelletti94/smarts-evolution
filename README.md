@@ -51,7 +51,7 @@ assert!(result.best_mcc().is_finite());
 
 Enable the `tui` feature and call `task.evolve_with_tui(&config, &seed_corpus)` for a native terminal dashboard with `[copy]` buttons for the best and change-point SMARTS.
 
-![The smarts-evolution TUI dashboard plotting best-so-far MCC per generation](docs/tui.png)
+![The smarts-evolution TUI dashboard plotting best-so-far MCC per generation](docs/tui.gif)
 
 The `examples/tui.rs` example runs a sample "amide vs the rest" classification on the dashboard. Try it with:
 
