@@ -172,8 +172,7 @@ impl SeedCorpus {
     /// removed. A no-op for [`SmartsCompatibilityMode::Full`].
     pub fn retain_compatible(&mut self, mode: SmartsCompatibilityMode) -> usize {
         let before = self.seeds.len();
-        self.seeds
-            .retain(|genome| mode.allows_query(genome.query()));
+        self.seeds.retain(|g| mode.allows_query(g.query()));
         before - self.seeds.len()
     }
 
@@ -221,10 +220,6 @@ pub struct SmartsGenomeBuilder {
     compatibility: SmartsCompatibilityMode,
 }
 
-/// Number of fallback draws attempted when a sampled seed is incompatible
-/// before giving up and returning a trivially compatible genome.
-const COMPATIBLE_FALLBACK_ATTEMPTS: usize = 8;
-
 impl SmartsGenomeBuilder {
     pub fn new(seed_corpus: SeedCorpus) -> Self {
         Self {
@@ -251,29 +246,21 @@ impl SmartsGenomeBuilder {
         } else {
             random_seed(rng)
         };
-        self.ensure_compatible(genome, rng)
+        self.ensure_compatible(genome)
     }
 
     /// Guarantee the returned genome satisfies the active compatibility mode.
     ///
-    /// In [`SmartsCompatibilityMode::Full`] this is a single accepting check.
-    /// Otherwise an incompatible sample (only the corpus path can produce one,
-    /// since built-in and random seeds are compatible by construction) is
-    /// replaced by a built-in seed, falling back to `[#6]` as a last resort.
-    fn ensure_compatible<R>(&self, genome: SmartsGenome, rng: &mut R) -> SmartsGenome
-    where
-        R: Rng + Sized,
-    {
+    /// In [`SmartsCompatibilityMode::Full`] this always accepts. Otherwise an
+    /// incompatible sample (only the corpus path can produce one, since built-in
+    /// and random seeds are compatible by construction) is replaced by the
+    /// trivially compatible `[#6]`.
+    fn ensure_compatible(&self, genome: SmartsGenome) -> SmartsGenome {
         if self.compatibility.allows_query(genome.query()) {
-            return genome;
+            genome
+        } else {
+            genome_from_known_valid_smarts("[#6]")
         }
-        for _ in 0..COMPATIBLE_FALLBACK_ATTEMPTS {
-            let candidate = builtin_seed(rng);
-            if self.compatibility.allows_query(candidate.query()) {
-                return candidate;
-            }
-        }
-        genome_from_known_valid_smarts("[#6]")
     }
 }
 
