@@ -8,6 +8,7 @@ use rand::RngExt;
 use rand::prelude::IndexedRandom;
 
 use super::SmartsGenome;
+use super::compatibility::SmartsCompatibilityMode;
 
 const STRATEGY_BUCKETS: usize = 12;
 const CORPUS_BUCKETS: usize = 8;
@@ -167,6 +168,14 @@ impl SeedCorpus {
         Ok(inserted)
     }
 
+    /// Drop seeds that are not compatible with `mode`, returning how many were
+    /// removed. A no-op for [`SmartsCompatibilityMode::Full`].
+    pub fn retain_compatible(&mut self, mode: SmartsCompatibilityMode) -> usize {
+        let before = self.seeds.len();
+        self.seeds.retain(|g| mode.allows_query(g.query()));
+        before - self.seeds.len()
+    }
+
     fn insert_genome(&mut self, genome: SmartsGenome) -> bool {
         if self
             .seeds
@@ -207,11 +216,22 @@ impl<'a, const N: usize> TryFrom<[&'a str; N]> for SeedCorpus {
 pub struct SmartsGenomeBuilder {
     /// Curated and/or user-provided SMARTS corpus.
     seed_corpus: SeedCorpus,
+    /// Compatibility profile every emitted genome must satisfy.
+    compatibility: SmartsCompatibilityMode,
 }
 
 impl SmartsGenomeBuilder {
     pub fn new(seed_corpus: SeedCorpus) -> Self {
-        Self { seed_corpus }
+        Self {
+            seed_corpus,
+            compatibility: SmartsCompatibilityMode::Full,
+        }
+    }
+
+    #[must_use]
+    pub fn with_smarts_compatibility(mut self, mode: SmartsCompatibilityMode) -> Self {
+        self.compatibility = mode;
+        self
     }
 
     pub fn build_genome<R>(&self, index: usize, rng: &mut R) -> SmartsGenome
@@ -219,12 +239,27 @@ impl SmartsGenomeBuilder {
         R: Rng + Sized,
     {
         let choice = index % STRATEGY_BUCKETS;
-        if choice < CORPUS_BUCKETS && !self.seed_corpus.is_empty() {
+        let genome = if choice < CORPUS_BUCKETS && !self.seed_corpus.is_empty() {
             corpus_seed(&self.seed_corpus, rng)
         } else if choice < CORPUS_BUCKETS + SIMPLE_BUILTIN_BUCKETS {
             builtin_seed(rng)
         } else {
             random_seed(rng)
+        };
+        self.ensure_compatible(genome)
+    }
+
+    /// Guarantee the returned genome satisfies the active compatibility mode.
+    ///
+    /// In [`SmartsCompatibilityMode::Full`] this always accepts. Otherwise an
+    /// incompatible sample (only the corpus path can produce one, since built-in
+    /// and random seeds are compatible by construction) is replaced by the
+    /// trivially compatible `[#6]`.
+    fn ensure_compatible(&self, genome: SmartsGenome) -> SmartsGenome {
+        if self.compatibility.allows_query(genome.query()) {
+            genome
+        } else {
+            genome_from_known_valid_smarts("[#6]")
         }
     }
 }
@@ -450,6 +485,59 @@ mod tests {
         let bromide = SmartsGenome::from_smarts("[#6]~[#35]").unwrap();
 
         assert!(observed.contains(chloride.smarts()) || observed.contains(bromide.smarts()));
+    }
+
+    #[test]
+    fn pubchem_builder_never_emits_incompatible_seed() {
+        use crate::genome::compatibility::SmartsCompatibilityMode;
+
+        // `h{2-}` is implicit hydrogen with a range: PubChem-incompatible.
+        let corpus = SeedCorpus::try_from(["[#6&h{2-}]", "[#6][#6]"]).unwrap();
+        assert!(
+            !SmartsCompatibilityMode::PubChem.allows_query(corpus.entries()[0].query()),
+            "h{{2-}} seed must be PubChem-incompatible"
+        );
+
+        let builder = SmartsGenomeBuilder::new(corpus)
+            .with_smarts_compatibility(SmartsCompatibilityMode::PubChem);
+        let mut rng = SmallRng::seed_from_u64(123);
+
+        for i in 0..512 {
+            let genome = builder.build_genome(i, &mut rng);
+            assert!(
+                SmartsCompatibilityMode::PubChem.allows_query(genome.query()),
+                "builder emitted PubChem-incompatible seed: {}",
+                genome.smarts()
+            );
+        }
+    }
+
+    #[test]
+    fn retain_compatible_drops_incompatible_seeds() {
+        use crate::genome::compatibility::SmartsCompatibilityMode;
+
+        let mut corpus = SeedCorpus::try_from(["[#6&h{2-}]", "[#6][#6]", "[#7&h{3-}]"]).unwrap();
+        assert_eq!(corpus.len(), 3);
+
+        let dropped = corpus.retain_compatible(SmartsCompatibilityMode::PubChem);
+        assert_eq!(dropped, 2, "two implicit-hydrogen seeds must be dropped");
+        assert_eq!(corpus.len(), 1);
+        assert!(
+            corpus
+                .entries()
+                .iter()
+                .all(|genome| SmartsCompatibilityMode::PubChem.allows_query(genome.query()))
+        );
+    }
+
+    #[test]
+    fn retain_compatible_is_noop_in_full_mode() {
+        use crate::genome::compatibility::SmartsCompatibilityMode;
+
+        let mut corpus = SeedCorpus::try_from(["[#6&h{2-}]", "[#6][#6]"]).unwrap();
+        let dropped = corpus.retain_compatible(SmartsCompatibilityMode::Full);
+        assert_eq!(dropped, 0);
+        assert_eq!(corpus.len(), 2);
     }
 
     #[test]

@@ -881,9 +881,19 @@ impl EvolutionSession {
             task_id, fold_count, total_targets
         );
 
-        let task_seed_corpus = task_seed_corpus(seed_corpus, &folds);
+        let mut task_seed_corpus = task_seed_corpus(seed_corpus, &folds);
+        let compatibility = config.smarts_compatibility();
+        let dropped_seeds = task_seed_corpus.retain_compatible(compatibility);
+        if dropped_seeds > 0 {
+            let message = format!(
+                "Dropped {dropped_seeds} seed(s) incompatible with {compatibility:?} mode for task '{task_id}'; {} compatible seed(s) remain",
+                task_seed_corpus.len()
+            );
+            warn!("{message}");
+        }
         let evaluator = SmartsEvaluator::new(folds);
-        let genome_builder = SmartsGenomeBuilder::new(task_seed_corpus.clone());
+        let genome_builder = SmartsGenomeBuilder::new(task_seed_corpus.clone())
+            .with_smarts_compatibility(compatibility);
         let mut rng = build_rng(config);
         let population: Vec<SmartsGenome> = (0..config.population_size())
             .map(|i| genome_builder.build_genome(i, &mut rng))
@@ -894,11 +904,11 @@ impl EvolutionSession {
             population.len(),
         );
 
-        let crossover = SmartsCrossover::new(config.crossover_rate())
-            .with_smarts_compatibility(config.smarts_compatibility());
+        let crossover =
+            SmartsCrossover::new(config.crossover_rate()).with_smarts_compatibility(compatibility);
         let reset_pool = build_reset_pool(&task_seed_corpus, &population, RESET_POOL_SIZE);
         let mutator = SmartsMutation::with_reset_pool(config.mutation_rate(), reset_pool)
-            .with_smarts_compatibility(config.smarts_compatibility());
+            .with_smarts_compatibility(compatibility);
 
         Ok(Self {
             task_id,
@@ -2856,6 +2866,47 @@ mod regression_tests {
         for _ in 0..3 {
             let progress = session.step().unwrap();
             assert!(!progress.leaders().is_empty());
+        }
+    }
+
+    #[test]
+    fn pubchem_session_excludes_incompatible_seeds_from_results() {
+        use crate::genome::compatibility::SmartsCompatibilityMode;
+
+        let task = EvolutionTask::new(
+            "pubchem-seed-filter",
+            vec![FoldData::new(vec![
+                sample("CC(=O)N", true),
+                sample("NC(=O)C", true),
+                sample("CCO", false),
+                sample("CCCl", false),
+            ])],
+        );
+        let config = EvolutionConfig::builder()
+            .population_size(16)
+            .generation_limit(1)
+            .stagnation_limit(1)
+            .rng_seed(99)
+            .smarts_compatibility(SmartsCompatibilityMode::PubChem)
+            .build()
+            .unwrap();
+        // `[#6&h{2-}]` is implicit hydrogen with a range: PubChem-incompatible.
+        // It must be dropped before it can seed the population and surface as a
+        // result. The two extra seeds keep a compatible corpus to draw from.
+        let seed_corpus =
+            SeedCorpus::try_from(["[#6&h{2-}]", "[#6](=[#8])[#7]", "[#6]~[#7]"]).unwrap();
+
+        let mut session = EvolutionSession::new(&task, &config, &seed_corpus, 8).unwrap();
+        let progress = session.step().unwrap();
+
+        assert!(!progress.leaders().is_empty());
+        for leader in progress.leaders() {
+            let genome = SmartsGenome::from_smarts(leader.smarts()).unwrap();
+            assert!(
+                SmartsCompatibilityMode::PubChem.allows_query(genome.query()),
+                "PubChem-incompatible SMARTS reached results: {}",
+                leader.smarts()
+            );
         }
     }
 
