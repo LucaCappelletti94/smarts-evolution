@@ -2,7 +2,7 @@
 
 use alloc::string::ToString;
 
-use elements_rs::{AtomicNumber, Element, ElementVariant, MassNumber};
+use elements_rs::{Element, ElementVariant, MassNumber};
 use smarts_rs::{
     AtomExpr, AtomPrimitive, BondExpr, BondExprTree, BondPrimitive, BracketExprTree, HydrogenKind,
     NumericQuery, QueryMol,
@@ -145,8 +145,33 @@ pub(crate) fn pubchem_recursive_query_is_compatible(query: &QueryMol) -> bool {
 }
 
 pub(crate) fn pubchem_element_symbol_is_compatible(element: Element) -> bool {
-    let atomic_number: u16 = element.atomic_number().into();
-    !matches!(atomic_number, 104 | 106 | 111 | 114 | 115 | 116 | 117 | 118)
+    use elements_rs::Element::*;
+    matches!(
+        element,
+        H | B
+            | C
+            | N
+            | O
+            | F
+            | Na
+            | Mg
+            | Si
+            | P
+            | S
+            | Cl
+            | K
+            | Ca
+            | Mn
+            | Fe
+            | Co
+            | Ni
+            | Cu
+            | Zn
+            | Se
+            | Br
+            | Mo
+            | I
+    )
 }
 
 fn pubchem_chirality_is_compatible(chirality: Chirality) -> bool {
@@ -238,7 +263,6 @@ mod tests {
             "[#6;X3](=[#8])[$([#7])]",
             "[#6:1]",
             "[#6:999]",
-            "[Db]",
             "[#118]",
             "[13*]",
             "C[C@H](F)O",
@@ -269,6 +293,7 @@ mod tests {
             "[#6:1000]",
             "[c;h1]",
             "[C@TB1](F)(Cl)Br",
+            "[Db]",
             "[Rf]",
             "[Og]",
             "[$([#6]-[#8].[#7])]",
@@ -344,6 +369,33 @@ mod tests {
             let query = QueryMol::from_str(smarts).unwrap();
 
             assert!(pubchem_query_is_compatible(&query), "{smarts}");
+        }
+    }
+
+    #[test]
+    fn pubchem_gate_rejects_implausible_elements() {
+        for symbol in [
+            "Mt", "Po", "At", "Rn", "Fr", "Ra", "U", "Tc", "Pm", "Db", "Hs",
+        ] {
+            let element = Element::from_str(symbol).unwrap();
+            assert!(
+                !pubchem_element_symbol_is_compatible(element),
+                "{symbol} must be rejected in PubChem mode"
+            );
+        }
+    }
+
+    #[test]
+    fn pubchem_gate_admits_organic_and_biorelevant_elements() {
+        for symbol in [
+            "H", "B", "C", "N", "O", "F", "Na", "Mg", "Si", "P", "S", "Cl", "K", "Ca", "Mn", "Fe",
+            "Co", "Ni", "Cu", "Zn", "Se", "Br", "Mo", "I",
+        ] {
+            let element = Element::from_str(symbol).unwrap();
+            assert!(
+                pubchem_element_symbol_is_compatible(element),
+                "{symbol} must be admitted in PubChem mode"
+            );
         }
     }
 }
