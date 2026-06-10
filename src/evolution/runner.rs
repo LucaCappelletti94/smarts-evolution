@@ -881,9 +881,21 @@ impl EvolutionSession {
             task_id, fold_count, total_targets
         );
 
-        let task_seed_corpus = task_seed_corpus(seed_corpus, &folds);
+        let mut task_seed_corpus = task_seed_corpus(seed_corpus, &folds);
+        let compatibility = config.smarts_compatibility();
+        let dropped_seeds = task_seed_corpus.retain_compatible(compatibility);
+        if dropped_seeds > 0 {
+            warn!(
+                "Dropped {} seed(s) incompatible with {:?} mode for task '{}'; {} compatible seed(s) remain",
+                dropped_seeds,
+                compatibility,
+                task_id,
+                task_seed_corpus.len(),
+            );
+        }
         let evaluator = SmartsEvaluator::new(folds);
-        let genome_builder = SmartsGenomeBuilder::new(task_seed_corpus.clone());
+        let genome_builder = SmartsGenomeBuilder::new(task_seed_corpus.clone())
+            .with_smarts_compatibility(compatibility);
         let mut rng = build_rng(config);
         let population: Vec<SmartsGenome> = (0..config.population_size())
             .map(|i| genome_builder.build_genome(i, &mut rng))
@@ -894,11 +906,11 @@ impl EvolutionSession {
             population.len(),
         );
 
-        let crossover = SmartsCrossover::new(config.crossover_rate())
-            .with_smarts_compatibility(config.smarts_compatibility());
+        let crossover =
+            SmartsCrossover::new(config.crossover_rate()).with_smarts_compatibility(compatibility);
         let reset_pool = build_reset_pool(&task_seed_corpus, &population, RESET_POOL_SIZE);
         let mutator = SmartsMutation::with_reset_pool(config.mutation_rate(), reset_pool)
-            .with_smarts_compatibility(config.smarts_compatibility());
+            .with_smarts_compatibility(compatibility);
 
         Ok(Self {
             task_id,
